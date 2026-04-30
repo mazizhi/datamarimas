@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Order Barang - PT Marimas</title>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif}
+        body{background:#f0f4f8;padding:12px}
+        .container{max-width:600px;margin:0 auto}
+        .header{background:#e65100;color:white;padding:16px;border-radius:12px 12px 0 0;text-align:center}
+        .header h2{font-size:18px}
+        .header p{font-size:12px;margin-top:5px}
+        .info{background:#fff3e0;padding:12px;font-size:13px;border-radius:8px;margin-bottom:12px}
+        .product{margin:12px 0;background:white;border-radius:12px;overflow:hidden}
+        .product-title{background:#667eea;color:white;padding:12px;font-weight:bold;display:flex;justify-content:space-between}
+        .variants{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:12px}
+        .variant-card{border:2px solid #e2e8f0;border-radius:10px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s}
+        .variant-card.selected{border-color:#25D366;background:#f0fdf4}
+        .variant-name{font-weight:600;font-size:14px}
+        .variant-stock{font-size:11px;margin-top:5px}
+        .stock-high{color:#38a169}
+        .stock-low{color:#e65100}
+        .stock-out{color:#e53935}
+        .qty-control{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
+        .qty-btn{width:30px;height:30px;border:none;border-radius:6px;font-size:18px;cursor:pointer}
+        .qty-minus{background:#fce4e4;color:#e53935}
+        .qty-plus{background:#e8f5e9;color:#2e7d32}
+        .qty-num{font-weight:bold;min-width:30px;text-align:center}
+        .summary{background:white;border-radius:12px;margin-top:12px;padding:12px;position:sticky;bottom:0;box-shadow:0 -2px 10px rgba(0,0,0,0.1)}
+        .summary-header{display:flex;justify-content:space-between;margin-bottom:10px;font-weight:bold}
+        .summary-items{max-height:200px;overflow-y:auto;margin-bottom:12px}
+        .summary-item{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;font-size:13px}
+        .btn-send{background:#25D366;color:white;border:none;padding:14px;border-radius:10px;width:100%;font-weight:bold;font-size:16px;cursor:pointer;margin-top:5px}
+        .btn-reset{background:#ff5722;color:white;border:none;padding:10px;border-radius:8px;width:100%;margin-bottom:8px;cursor:pointer}
+        .loading{text-align:center;padding:40px;color:#666}
+        .last-update{font-size:10px;text-align:center;margin-top:12px;color:#888}
+        button:disabled{opacity:0.5}
+        .remove-item{background:none;border:none;color:#e53935;margin-left:8px;cursor:pointer;font-size:14px}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .spinner{width:30px;height:30px;border:3px solid #eee;border-top-color:#e65100;border-radius:50%;animation:spin 0.8s linear infinite;margin:20px auto}
+    </style>
+</head>
+<body>
+<div class="container" id="app">
+    <div class="header">
+        <h2>🛒 Order Barang PT Marimas</h2>
+        <p>Tap barang → atur jumlah → kirim ke Sales</p>
+    </div>
+    <div id="content">
+        <div class="loading"><div class="spinner"></div>Mengambil data stok...</div>
+    </div>
+</div>
+
+<script>
+// ============ APPS SCRIPT URL SUDAH DIISI ============
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxQH087Cn-5BATpiPCP2GOksJd-puxjFextERCEVRYY8lyM1HZpBBJZU5mK8XOPyoxV/exec";
+
+let products = [];
+let orders = {};
+
+async function loadData() {
+    try {
+        const response = await fetch(APPS_SCRIPT_URL + "?action=get");
+        const data = await response.json();
+        if (data.products) {
+            products = data.products;
+            document.getElementById('content').innerHTML = renderProducts();
+            attachEventListeners();
+        } else {
+            throw new Error("Data kosong");
+        }
+    } catch (err) {
+        console.error(err);
+        document.getElementById('content').innerHTML = `
+            <div class="loading">
+                ⚠️ Gagal mengambil data stok<br>
+                <button onclick="loadData()" style="margin-top:15px;background:#e65100;color:white;border:none;padding:10px;border-radius:8px">🔄 Coba Lagi</button>
+            </div>
+        `;
+    }
+}
+
+function renderProducts() {
+    if (!products.length) return '<div class="loading">Tidak ada data</div>';
+    
+    let html = `<div class="info">👆 <b>Cara pakai:</b> Tap kartu barang → pilih → atur jumlah dengan +/−</div>`;
+    
+    for (let p of products) {
+        const totalStock = p.variants.reduce((sum, v) => sum + v.stock, 0);
+        html += `
+            <div class="product">
+                <div class="product-title">
+                    <span>📦 ${p.name}</span>
+                    <span>Stok: ${totalStock}</span>
+                </div>
+                <div class="variants" data-produk="${p.name}">
+        `;
+        
+        for (let v of p.variants) {
+            const key = `${p.name}|${v.name}`;
+            const orderQty = orders[key] || 0;
+            const stockClass = v.stock === 0 ? 'stock-out' : (v.stock <= 3 ? 'stock-low' : 'stock-high');
+            const stockText = v.stock === 0 ? '⚠️ HABIS' : (v.stock <= 3 ? `⚡ ${v.stock} sisa` : `✓ ${v.stock}`);
+            const selectedClass = orderQty > 0 ? 'selected' : '';
+            
+            html += `
+                <div class="variant-card ${selectedClass}" data-produk="${p.name}" data-varian="${v.name}" data-stok="${v.stock}">
+                    <div class="variant-name">${v.name}</div>
+                    <div class="variant-stock ${stockClass}">${stockText}</div>
+                    <div class="qty-control" style="display: ${orderQty > 0 ? 'flex' : 'none'}">
+                        <button class="qty-btn qty-minus" data-produk="${p.name}" data-varian="${v.name}">−</button>
+                        <span class="qty-num" id="qty_${key.replace(/[^a-zA-Z0-9]/g, '_')}">${orderQty}</span>
+                        <button class="qty-btn qty-plus" data-produk="${p.name}" data-varian="${v.name}">+</button>
+                    </div>
+                </div>
+            `;
+        }
+        html += `</div></div>`;
+    }
+    
+    const orderKeys = Object.keys(orders);
+    const totalItems = orderKeys.length;
+    let summaryHtml = `
+        <div class="summary">
+            <div class="summary-header">
+                <span>🧾 Ringkasan Order</span>
+                <span>${totalItems} item</span>
+            </div>
+            <div class="summary-items" id="summaryItems">
+    `;
+    
+    if (totalItems === 0) {
+        summaryHtml += `<div style="text-align:center;color:#999;padding:12px">Belum ada barang dipilih</div>`;
+    } else {
+        for (let key of orderKeys) {
+            const [produk, varian] = key.split('|');
+            summaryHtml += `
+                <div class="summary-item">
+                    <span>${produk} – ${varian}</span>
+                    <span>${orders[key]} pack <button class="remove-item" data-key="${key}">✕</button></span>
+                </div>
+            `;
+        }
+    }
+    
+    summaryHtml += `
+            </div>
+            <button class="btn-reset" id="resetAll">🗑 Reset Semua Pilihan</button>
+            <button class="btn-send" id="sendWA" ${totalItems === 0 ? 'disabled' : ''}>📱 Kirim Order ke Sales via WhatsApp</button>
+            <div class="last-update" id="lastUpdate"></div>
+        </div>
+    `;
+    
+    html += summaryHtml;
+    return html;
+}
+
+function attachEventListeners() {
+    document.querySelectorAll('.variant-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+            if (e.target.classList.contains('qty-btn') || e.target.classList.contains('qty-num')) return;
+            
+            const produk = card.dataset.produk;
+            const varian = card.dataset.varian;
+            const stok = parseInt(card.dataset.stok);
+            const key = `${produk}|${varian}`;
+            
+            if (stok === 0) {
+                alert('⚠️ Stok habis, tidak bisa memesan!');
+                return;
+            }
+            
+            if (!orders[key]) {
+                orders[key] = 1;
+                refreshUI();
+            }
+        });
+    });
+    
+    document.querySelectorAll('.qty-plus').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const produk = btn.dataset.produk;
+            const varian = btn.dataset.varian;
+            const key = `${produk}|${varian}`;
+            const maxStok = products.find(p => p.name === produk)?.variants.find(v => v.name === varian)?.stock || 0;
+            
+            if (orders[key] >= maxStok) {
+                alert(`⚠️ Stok ${produk} - ${varian} hanya tersisa ${maxStok} pack`);
+                return;
+            }
+            orders[key] = (orders[key] || 0) + 1;
+            refreshUI();
+        });
+    });
+    
+    document.querySelectorAll('.qty-minus').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const produk = btn.dataset.produk;
+            const varian = btn.dataset.varian;
+            const key = `${produk}|${varian}`;
+            
+            if (orders[key] <= 1) {
+                delete orders[key];
+            } else {
+                orders[key]--;
+            }
+            refreshUI();
+        });
+    });
+    
+    document.querySelectorAll('.remove-item').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const key = btn.dataset.key;
+            delete orders[key];
+            refreshUI();
+        });
+    });
+    
+    const resetBtn = document.getElementById('resetAll');
+    if (resetBtn) {
+        resetBtn.onclick = () => {
+            if (confirm('Reset semua pilihan?')) {
+                orders = {};
+                refreshUI();
+            }
+        };
+    }
+    
+    const sendBtn = document.getElementById('sendWA');
+    if (sendBtn) {
+        sendBtn.onclick = () => {
+            const orderKeys = Object.keys(orders);
+            if (orderKeys.length === 0) {
+                alert('Belum ada barang dipilih!');
+                return;
+            }
+            
+            const tgl = new Date().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'});
+            let message = `🛒 *ORDER BARANG PT MARIMAS - ${tgl}*\n━━━━━━━━━━━━━━━━━━━\n\n`;
+            
+            const grouped = {};
+            for (let key of orderKeys) {
+                const [produk, varian] = key.split('|');
+                if (!grouped[produk]) grouped[produk] = [];
+                grouped[produk].push({ varian, qty: orders[key] });
+            }
+            
+            for (let produk in grouped) {
+                message += `📦 *${produk}*\n`;
+                for (let item of grouped[produk]) {
+                    message += `   • ${item.varian} → *${item.qty} pack*\n`;
+                }
+                message += '\n';
+            }
+            
+            message += `━━━━━━━━━━━━━━━━━━━\n📋 Total: *${orderKeys.length} item*\n\nMohon segera diproses. Terima kasih 🙏`;
+            
+            window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+        };
+    }
+    
+    const updateSpan = document.getElementById('lastUpdate');
+    if (updateSpan) {
+        updateSpan.innerHTML = `🕐 Data stok terakhir: ${new Date().toLocaleString('id-ID')}`;
+    }
+}
+
+function refreshUI() {
+    document.getElementById('content').innerHTML = renderProducts();
+    attachEventListeners();
+}
+
+loadData();
+</script>
+</body>
+</html>
