@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stok Marimas (Firebase)</title>
+
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAAtuQCf0aTt5h9R-sWnC9sYHZlduyrbXw",
+  authDomain: "oder-barang-v1.firebaseapp.com",
+  projectId: "oder-barang-v1",
+  storageBucket: "oder-barang-v1.firebasestorage.app",
+  messagingSenderId: "303201486162",
+  appId: "1:303201486162:web:f13d601e7330d9f2eee68b"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+</script>
+
+<style>
+body{font-family:sans-serif;background:#f5f5f5;padding:20px}
+.container{max-width:500px;margin:auto;background:white;padding:20px;border-radius:10px}
+button{padding:10px;margin:5px}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>📦 Stok Produk</h2>
+<div id="list"></div>
+<button onclick="saveData()">💾 Simpan ke Database</button>
+</div>
+
+<script>
+let products = [];
+
+async function loadData(){
+  const doc = await db.collection("produk").doc("data").get();
+  products = doc.data().produk || [];
+  render();
+}
+
+function render(){
+  const el = document.getElementById("list");
+  el.innerHTML = "";
+
+  products.forEach((p,pi)=>{
+    let html = `<h3>${p.name}</h3>`;
+    p.variants.forEach((v,vi)=>{
+      html += `
+      <div>
+        ${v.name} : 
+        <button onclick="dec(${pi},${vi})">-</button>
+        ${v.stock}
+        <button onclick="inc(${pi},${vi})">+</button>
+      </div>`;
+    });
+    el.innerHTML += html;
+  });
+}
+
+function inc(pi,vi){
+  products[pi].variants[vi].stock++;
+  render();
+}
+
+function dec(pi,vi){
+  if(products[pi].variants[vi].stock>0){
+    products[pi].variants[vi].stock--;
+    render();
+  }
+}
+
+async function saveData(){
+  await db.collection("produk").doc("data").set({
+    produk: products
+  });
+  alert("Data tersimpan!");
+}
+
+loadData();
+</script>
+
+</body>
+</html>
